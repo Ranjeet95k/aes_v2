@@ -1,0 +1,25 @@
+# Vivado generated files
+*.jou
+*.log
+*.str
+*.backup
+*.wdb
+
+*.cache
+*.hw
+*.ip_user_files
+*.runs
+*.sim
+*.Xil
+
+# Reports / temp
+*.rpt
+*.vds
+
+# Bitstream
+*.bit
+*.bin
+
+# OS files
+.DS_Store
+Thumbs.db
