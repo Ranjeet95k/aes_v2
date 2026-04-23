@@ -1,4 +1,6 @@
-module uart_tx #(parameter CLKS_PER_BIT = 16)(
+`timescale 1ns / 1ps
+
+module uart_tx #(parameter CLKS_PER_BIT = 868)(
     input clk,
     input start,
     input [7:0] data_in,

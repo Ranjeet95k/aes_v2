@@ -1,4 +1,6 @@
-module uart_rx #(parameter CLKS_PER_BIT = 16)(
+`timescale 1ns / 1ps
+
+module uart_rx #(parameter CLKS_PER_BIT = 868)(
     input clk,
     input rx,
     output reg [7:0] data_out = 0,

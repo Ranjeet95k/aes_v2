@@ -7,6 +7,10 @@ reg rst = 0;
 reg rx  = 1;
 wire tx;
 
+localparam integer CLKS_PER_BIT = 868;
+localparam integer CLK_PERIOD_NS = 10;
+localparam integer UART_BIT_TIME_NS = CLKS_PER_BIT * CLK_PERIOD_NS;
+
 // Clock (100 MHz)
 always #5 clk = ~clk;
 
@@ -24,16 +28,16 @@ top_aes_uart DUT (
 task send_byte(input [7:0] data);
     integer i;
     begin
-        rx = 1; #160;        // idle
+        rx = 1; #(UART_BIT_TIME_NS);        // idle
 
-        rx = 0; #160;        // start bit
+        rx = 0; #(UART_BIT_TIME_NS);        // start bit
 
         for (i = 0; i < 8; i = i + 1) begin
             rx = data[i];    // LSB first
-            #160;
+            #(UART_BIT_TIME_NS);
         end
 
-        rx = 1; #160;        // stop bit
+        rx = 1; #(UART_BIT_TIME_NS);        // stop bit
     end
 endtask
 
@@ -53,10 +57,10 @@ initial begin
     rst = 0;
 
     // ================= CIPHER (YOUR VECTOR) =================
-    cipher[0]=8'h31; cipher[1]=8'h96; cipher[2]=8'hde; cipher[3]=8'h4d;
-    cipher[4]=8'h67; cipher[5]=8'h2d; cipher[6]=8'h06; cipher[7]=8'ha0;
-    cipher[8]=8'hd5; cipher[9]=8'h2d; cipher[10]=8'h94; cipher[11]=8'h7a;
-    cipher[12]=8'he3; cipher[13]=8'hee; cipher[14]=8'ha7; cipher[15]=8'h89;
+    cipher[0]=8'hc8; cipher[1]=8'hf7; cipher[2]=8'hd4; cipher[3]=8'h3c;
+    cipher[4]=8'hd9; cipher[5]=8'h8f; cipher[6]=8'h2e; cipher[7]=8'h5a;
+    cipher[8]=8'he1; cipher[9]=8'h10; cipher[10]=8'h01; cipher[11]=8'h07;
+    cipher[12]=8'h71; cipher[13]=8'h70; cipher[14]=8'h58; cipher[15]=8'h71;
 
     // ================= KEY =================
     key[0]=8'h00; key[1]=8'h01; key[2]=8'h02; key[3]=8'h03;
@@ -87,7 +91,7 @@ initial begin
     $display("KEY           = %h", DUT.key_reg);
     $display("AES OUTPUT    = %h", DUT.aes_out);
 
-    if (DUT.aes_out == 128'h4142434445464748494a4b4c4d4e4f54)
+    if (DUT.aes_out == 128'h4142434445464748494a4b4c4d4e4f52)
         $display(" DECRYPTION SUCCESS");
     else
         $display(" DECRYPTION FAILED");

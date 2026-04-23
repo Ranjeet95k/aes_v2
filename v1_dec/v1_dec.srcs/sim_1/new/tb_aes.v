@@ -23,7 +23,7 @@ initial begin
     clk = 0;
 
     // Input test vector
-    cipher = 128'h3196de4d672d06a0d52d947ae3eea789;
+    cipher = 128'hc8f7d43cd98f2e5ae110010771705871;
     key    = 128'h000102030405060708090a0b0c0d0e0f;
 
     #10000;
@@ -31,7 +31,7 @@ initial begin
     $display("\n========= FINAL OUTPUT =========");
     $display("Plaintext Got = %h", out);
 
-    if(out == 128'h4142434445464748494a4b4c4d4e4f54)
+    if(out == 128'h4142434445464748494a4b4c4d4e4f52)
         $display("DECRYPTION SUCCESS");
     else
         $display("❌ DECRYPTION FAILED");

@@ -7,98 +7,160 @@ module AES128_DECRYPT_STAGE4(
     output reg [127:0] OUT_DATA
 );
 
-// ================= KEY PIPELINE =================
+// =====================================================
+// Iterative AES-128 decrypt architecture
+// =====================================================
+// The previous implementation instantiated every key/decrypt round in
+// parallel. This version reuses one round datapath across the AES rounds,
+// which trades latency for much lower LUT utilization.
 
-wire [127:0] dummy = 128'd0;
+localparam [2:0] S_LOAD          = 3'd0,
+                 S_WAIT_K0       = 3'd1,
+                 S_EXPAND_KEY    = 3'd2,
+                 S_DEC_LAST      = 3'd3,
+                 S_DEC_ROUND     = 3'd4,
+                 S_DONE          = 3'd5;
 
-wire [127:0] R0_w,R1_w,R2_w,R3_w,R4_w,R5_w,R6_w,R7_w,R8_w,R9_w;
-wire [127:0] K0_w,K1_w,K2_w,K3_w,K4_w,K5_w,K6_w,K7_w,K8_w,K9_w;
+localparam [3:0] ROUND_WAIT = 4'd5;
 
-reg [127:0] R0_q,R1_q,R2_q,R3_q,R4_q,R5_q,R6_q,R7_q,R8_q,R9_q;
-reg [127:0] K0_q,K1_q,K2_q,K3_q,K4_q,K5_q,K6_q,K7_q,K8_q,K9_q;
-reg [127:0] cipher_q;
+reg [2:0] state = S_LOAD;
+reg [3:0] wait_count = 4'd0;
+reg [3:0] key_round = 4'd0;
+reg [3:0] dec_round = 4'd0;
 
-wire [127:0] perm_key, perm_key1;
+reg [127:0] cipher_reg = 128'd0;
+reg [127:0] key_reg = 128'd0;
+reg [127:0] decrypt_state = 128'd0;
+reg [127:0] round_key [0:9];
+reg [127:0] key_expand_in = 128'd0;
 
-SUB_BYTES s1(.clk(clk), .IN_DATA(IN_KEY), .SB_DATA(perm_key));
-KEY_MODIFY_PART k1(.clk(clk), .IN_KEY(perm_key), .KEY_OUT(perm_key1));
+// K0 generation is performed once from the user key.
+wire [127:0] perm_key;
+wire [127:0] perm_key1;
 
-assign R0_w = dummy ^ perm_key1;
-assign K0_w = perm_key1;
-
-// Forward rounds (key generation)
-ROUND_ITERATION R1_gen(.clk(clk), .ROUND_KEY(4'd0), .IN_DATA(R0_q), .IN_KEY(K0_q), .OUT_KEY(K1_w), .OUT_DATA(R1_w));
-ROUND_ITERATION R2_gen(.clk(clk), .ROUND_KEY(4'd1), .IN_DATA(R1_q), .IN_KEY(K1_q), .OUT_KEY(K2_w), .OUT_DATA(R2_w));
-ROUND_ITERATION R3_gen(.clk(clk), .ROUND_KEY(4'd2), .IN_DATA(R2_q), .IN_KEY(K2_q), .OUT_KEY(K3_w), .OUT_DATA(R3_w));
-ROUND_ITERATION R4_gen(.clk(clk), .ROUND_KEY(4'd3), .IN_DATA(R3_q), .IN_KEY(K3_q), .OUT_KEY(K4_w), .OUT_DATA(R4_w));
-ROUND_ITERATION R5_gen(.clk(clk), .ROUND_KEY(4'd4), .IN_DATA(R4_q), .IN_KEY(K4_q), .OUT_KEY(K5_w), .OUT_DATA(R5_w));
-ROUND_ITERATION R6_gen(.clk(clk), .ROUND_KEY(4'd5), .IN_DATA(R5_q), .IN_KEY(K5_q), .OUT_KEY(K6_w), .OUT_DATA(R6_w));
-ROUND_ITERATION R7_gen(.clk(clk), .ROUND_KEY(4'd6), .IN_DATA(R6_q), .IN_KEY(K6_q), .OUT_KEY(K7_w), .OUT_DATA(R7_w));
-ROUND_ITERATION R8_gen(.clk(clk), .ROUND_KEY(4'd7), .IN_DATA(R7_q), .IN_KEY(K7_q), .OUT_KEY(K8_w), .OUT_DATA(R8_w));
-ROUND_ITERATION R9_gen(.clk(clk), .ROUND_KEY(4'd8), .IN_DATA(R8_q), .IN_KEY(K8_q), .OUT_KEY(K9_w), .OUT_DATA(R9_w));
-
-// ================= DECRYPT =================
-
-wire [127:0] R9_d_w,R8_d_w,R7_d_w,R6_d_w,R5_d_w,R4_d_w,R3_d_w,R2_d_w,R1_d_w,R0_d_w;
-reg [127:0] R9_d_q,R8_d_q,R7_d_q,R6_d_q,R5_d_q,R4_d_q,R3_d_q,R2_d_q,R1_d_q,R0_d_q;
-
-// Last round
-INV_LAST_ROUND INV_R10(
+SUB_BYTES s1(
     .clk(clk),
-    .ROUND_KEY(4'd9),
-    .IN_DATA(cipher_q),
-    .IN_KEY(K9_q),
-    .OUT_DATA(R9_d_w)
+    .IN_DATA(key_reg),
+    .SB_DATA(perm_key)
 );
 
-// Inverse rounds
-INV_ROUND_ITERATION_updated INV_R9(.clk(clk), .ROUND_KEY(4'd8), .IN_DATA(R9_d_q), .IN_KEY(K8_q), .OUT_DATA(R8_d_w));
-INV_ROUND_ITERATION_updated INV_R8(.clk(clk), .ROUND_KEY(4'd7), .IN_DATA(R8_d_q), .IN_KEY(K7_q), .OUT_DATA(R7_d_w));
-INV_ROUND_ITERATION_updated INV_R7(.clk(clk), .ROUND_KEY(4'd6), .IN_DATA(R7_d_q), .IN_KEY(K6_q), .OUT_DATA(R6_d_w));
-INV_ROUND_ITERATION_updated INV_R6(.clk(clk), .ROUND_KEY(4'd5), .IN_DATA(R6_d_q), .IN_KEY(K5_q), .OUT_DATA(R5_d_w));
-INV_ROUND_ITERATION_updated INV_R5(.clk(clk), .ROUND_KEY(4'd4), .IN_DATA(R5_d_q), .IN_KEY(K4_q), .OUT_DATA(R4_d_w));
-INV_ROUND_ITERATION_updated INV_R4(.clk(clk), .ROUND_KEY(4'd3), .IN_DATA(R4_d_q), .IN_KEY(K3_q), .OUT_DATA(R3_d_w));
-INV_ROUND_ITERATION_updated INV_R3(.clk(clk), .ROUND_KEY(4'd2), .IN_DATA(R3_d_q), .IN_KEY(K2_q), .OUT_DATA(R2_d_w));
-INV_ROUND_ITERATION_updated INV_R2(.clk(clk), .ROUND_KEY(4'd1), .IN_DATA(R2_d_q), .IN_KEY(K1_q), .OUT_DATA(R1_d_w));
-INV_ROUND_ITERATION_updated INV_R1(.clk(clk), .ROUND_KEY(4'd0), .IN_DATA(R1_d_q), .IN_KEY(K0_q), .OUT_DATA(R0_d_w));
+KEY_MODIFY_PART k1(
+    .clk(clk),
+    .IN_KEY(perm_key),
+    .KEY_OUT(perm_key1)
+);
 
-// Register every inter-round boundary to break the long AES critical path.
+// One shared forward round datapath for K1..K9 expansion.
+wire [127:0] key_expand_out;
+wire [127:0] unused_round_data;
+
+ROUND_ITERATION key_round_unit(
+    .clk(clk),
+    .ROUND_KEY(key_round),
+    .IN_DATA(128'd0),
+    .IN_KEY(key_expand_in),
+    .OUT_KEY(key_expand_out),
+    .OUT_DATA(unused_round_data)
+);
+
+// One shared decrypt last-round datapath.
+wire [127:0] inv_last_out;
+
+INV_LAST_ROUND inv_last_unit(
+    .clk(clk),
+    .ROUND_KEY(4'd9),
+    .IN_DATA(cipher_reg),
+    .IN_KEY(round_key[9]),
+    .OUT_DATA(inv_last_out)
+);
+
+// One shared inverse round datapath for rounds 8 down to 0.
+wire [127:0] inv_round_out;
+
+INV_ROUND_ITERATION_updated inv_round_unit(
+    .clk(clk),
+    .ROUND_KEY(dec_round),
+    .IN_DATA(decrypt_state),
+    .IN_KEY(round_key[dec_round]),
+    .OUT_DATA(inv_round_out)
+);
+
 always @(posedge clk) begin
-    cipher_q <= IN_DATA;
+    case (state)
+        S_LOAD: begin
+            cipher_reg <= IN_DATA;
+            key_reg <= IN_KEY;
+            wait_count <= 4'd0;
+            key_round <= 4'd0;
+            dec_round <= 4'd8;
+            state <= S_WAIT_K0;
+        end
 
-    R0_q <= R0_w;
-    K0_q <= K0_w;
-    R1_q <= R1_w;
-    K1_q <= K1_w;
-    R2_q <= R2_w;
-    K2_q <= K2_w;
-    R3_q <= R3_w;
-    K3_q <= K3_w;
-    R4_q <= R4_w;
-    K4_q <= K4_w;
-    R5_q <= R5_w;
-    K5_q <= K5_w;
-    R6_q <= R6_w;
-    K6_q <= K6_w;
-    R7_q <= R7_w;
-    K7_q <= K7_w;
-    R8_q <= R8_w;
-    K8_q <= K8_w;
-    R9_q <= R9_w;
-    K9_q <= K9_w;
+        S_WAIT_K0: begin
+            if (wait_count == ROUND_WAIT) begin
+                round_key[0] <= perm_key1;
+                key_expand_in <= perm_key1;
+                wait_count <= 4'd0;
+                key_round <= 4'd0;
+                state <= S_EXPAND_KEY;
+            end else begin
+                wait_count <= wait_count + 4'd1;
+            end
+        end
 
-    R9_d_q <= R9_d_w;
-    R8_d_q <= R8_d_w;
-    R7_d_q <= R7_d_w;
-    R6_d_q <= R6_d_w;
-    R5_d_q <= R5_d_w;
-    R4_d_q <= R4_d_w;
-    R3_d_q <= R3_d_w;
-    R2_d_q <= R2_d_w;
-    R1_d_q <= R1_d_w;
-    R0_d_q <= R0_d_w;
+        S_EXPAND_KEY: begin
+            if (wait_count == ROUND_WAIT) begin
+                round_key[key_round + 4'd1] <= key_expand_out;
+                key_expand_in <= key_expand_out;
+                wait_count <= 4'd0;
 
-    OUT_DATA <= R0_d_q ^ K0_q;
+                if (key_round == 4'd8) begin
+                    state <= S_DEC_LAST;
+                end else begin
+                    key_round <= key_round + 4'd1;
+                end
+            end else begin
+                wait_count <= wait_count + 4'd1;
+            end
+        end
+
+        S_DEC_LAST: begin
+            if (wait_count == ROUND_WAIT) begin
+                decrypt_state <= inv_last_out;
+                dec_round <= 4'd8;
+                wait_count <= 4'd0;
+                state <= S_DEC_ROUND;
+            end else begin
+                wait_count <= wait_count + 4'd1;
+            end
+        end
+
+        S_DEC_ROUND: begin
+            if (wait_count == ROUND_WAIT) begin
+                wait_count <= 4'd0;
+
+                if (dec_round == 4'd0) begin
+                    OUT_DATA <= inv_round_out ^ round_key[0];
+                    state <= S_DONE;
+                end else begin
+                    decrypt_state <= inv_round_out;
+                    dec_round <= dec_round - 4'd1;
+                end
+            end else begin
+                wait_count <= wait_count + 4'd1;
+            end
+        end
+
+        S_DONE: begin
+            if ((IN_DATA != cipher_reg) || (IN_KEY != key_reg)) begin
+                state <= S_LOAD;
+            end
+        end
+
+        default: begin
+            state <= S_LOAD;
+        end
+    endcase
 end
 
 endmodule

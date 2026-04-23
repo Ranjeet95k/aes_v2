@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module top_aes_uart(
     input clk,
     input rst,
